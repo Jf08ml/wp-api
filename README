@@ -1,2 +1,91 @@
-# Start dev server
-pm2 start server.js --watch
+# WhatsApp Multi-Sesión Backend
+
+Backend Node.js para administrar **múltiples sesiones de WhatsApp Web** utilizando [whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js). Proporciona una API REST y WebSocket para controlar, autenticar y enviar mensajes a través de varias cuentas de WhatsApp desde una sola instancia de servidor.
+
+---
+
+## Características
+
+- **Multi-sesión:** Control de múltiples cuentas WhatsApp de forma independiente.
+- **Autenticación por QR:** Recibe el QR en tiempo real vía WebSocket para cada sesión.
+- **API REST:** Enviar mensajes, iniciar/cerrar sesión y consultar estado de cada cuenta.
+- **WebSocket:** Estado en tiempo real de la sesión (QR, conectado, desconectado, etc).
+- **Limpieza automática:** Libera recursos y elimina archivos de sesión cuando la cuenta se desconecta o cierra.
+- **Preparado para producción:** Ejecuta como servicio usando PM2, listo para deploy en Hetzner, DigitalOcean, etc.
+- **Integración sencilla con frontend** (Mantine, React, etc).
+
+---
+
+## Requisitos
+
+- Node.js 20.x o superior
+- MongoDB (Atlas o local, si usas funciones de base de datos)
+- Google Chrome instalado (usado por Puppeteer/whatsapp-web.js)
+- Sistema operativo recomendado: **Ubuntu 22/24** (también funciona en Windows/MacOS para desarrollo)
+
+---
+
+## Instalación
+
+### 1. Clona el repositorio
+
+```bash
+git clone https://github.com/TU_USUARIO/wa-multisession-backend.git
+cd wa-multisession-backend
+
+### Instala dependencias
+npm install
+
+### Archivo .env
+MONGO_URI=mongodb+srv://usuario:password@cluster.mongodb.net/tu_db
+PORT=3000
+
+
+### Instalacion de google 
+sudo apt update
+sudo apt install -y wget
+wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+sudo apt install -y ./google-chrome-stable_current_amd64.deb
+
+
+### Ejecución
+
+Local
+npm run dev
+
+Producción
+pm2 start server.js --name wa-multisession
+
+
+
+API REST
+
+## Iniciar o reutilizar una sesión de WhatsApp
+POST /api/session
+Content-Type: application/json
+
+{
+  "clientId": "identificador_unico"
+}
+
+## Enviar mensaje
+POST /api/send
+Content-Type: application/json
+
+{
+  "clientId": "identificador_unico",
+  "phone": "57300xxxxxxx",
+  "message": "Hola mundo!"
+}
+
+## Cerrar sesión y limpiar archivos
+POST /api/logout
+Content-Type: application/json
+
+{
+  "clientId": "identificador_unico"
+}
+
+
+
+
