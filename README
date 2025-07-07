@@ -1,0 +1,2 @@
+# Start dev server
+pm2 start server.js --watch

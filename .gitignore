@@ -1,0 +1,45 @@
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+pids/
+*.pid
+*.seed
+
+# dotenv environment variables
+.env
+.env.*    # Por si usas varios ambientes
+
+# Sesiones de whatsapp-web.js (archivos de autenticación)
+wwebjs_auth/
+.wwebjs_cache/
+wwebjs_cache/
+
+# Directorios de salida y cachés
+dist/
+build/
+.cache/
+tmp/
+
+# PM2 logs/dumps
+pids/
+*.pid
+*.log
+.pm2/
+
+# IDE/Editor config
+.vscode/
+.idea/
+.DS_Store
+
+# Mac/Linux system files
+*.swp
+*.swo
+*~
