@@ -1,12 +1,12 @@
 // sessions/sessionManager.js
 
 import pkg from "whatsapp-web.js";
-const { Client, LocalAuth } = pkg;
+const { Client, LocalAuth, MessageMedia } = pkg;
 import fs from "fs";
 import path from "path";
 
 // Mapa global de clientes activos
-const clients = {};
+export const clients = {}; // <-- EXPORTA AQUÍ
 
 export function getOrCreateClient({ clientId, io }) {
   if (clients[clientId]) return clients[clientId];
@@ -35,24 +35,26 @@ export function getOrCreateClient({ clientId, io }) {
 
   client.on("ready", () => {
     io.to(clientId).emit("status", { status: "ready" });
+    client.status = "ready"; // <-- Puedes guardar el estado aquí
     console.log(`[${clientId}] Sesión lista`);
   });
 
   client.on("authenticated", () => {
     io.to(clientId).emit("status", { status: "authenticated" });
+    client.status = "authenticated";
     console.log(`[${clientId}] Autenticado`);
   });
 
   client.on("auth_failure", (msg) => {
     io.to(clientId).emit("status", { status: "auth_failure", error: msg });
+    client.status = "auth_failure";
     console.log(`[${clientId}] Fallo de autenticación`);
-    // Limpieza proactiva si autenticación falla
     limpiarSesion(clientId, io, "auth_failure");
   });
 
-  // Ajuste CLAVE: Limpia todo cuando la sesión se desconecta (cierra desde WhatsApp, etc)
   client.on("disconnected", (reason) => {
     io.to(clientId).emit("status", { status: "disconnected", reason });
+    client.status = "disconnected";
     console.log(`[${clientId}] Desconectado`);
     limpiarSesion(clientId, io, "disconnected");
   });
@@ -68,7 +70,6 @@ export function getClient(clientId) {
 
 // FUNCION CENTRAL de limpieza para usar en ambos lugares
 function limpiarSesion(clientId, io, motivo = "") {
-  // Destruye el cliente de WhatsApp si existe
   if (clients[clientId]) {
     try {
       clients[clientId].destroy();
@@ -85,8 +86,6 @@ function limpiarSesion(clientId, io, motivo = "") {
     console.log(`[${clientId}] Archivos de sesión eliminados`);
   }
 
-  // Si quisieras aquí podrías actualizar el clientIdWhatsapp en tu base de datos (opcional)
-
   // Opcional: notificar por websocket si necesitas más feedback
   io.to(clientId).emit("session_cleaned", { status: "cleaned", motivo });
 }
@@ -95,3 +94,6 @@ function limpiarSesion(clientId, io, motivo = "") {
 export function logoutClient(clientId, io) {
   limpiarSesion(clientId, io, "logout_manual");
 }
+
+// Exporta MessageMedia para uso en otros archivos
+export { MessageMedia };
