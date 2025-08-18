@@ -33,7 +33,8 @@ app.use(
 app.use(express.json());
 
 // --- Seguridad simple por API key (HTTP) ---
-const API_KEY = process.env.API_KEY || "change-me";
+const API_KEY = process.env.API_KEY || "apiwhatsappzybi";
+
 app.use((req, res, next) => {
   const key = req.header("x-api-key");
   if (!key || key !== API_KEY) {
@@ -43,15 +44,26 @@ app.use((req, res, next) => {
 });
 
 // --- Rate limit básico (respetando proxy) ---
-app.use(
-  rateLimit({
-    windowMs: 60_000,
-    max: 120,
-    standardHeaders: true,
-    legacyHeaders: false,
-    // Si quisieras personalizar la clave: keyGenerator: (req) => req.ip,
-  })
-);
+const limiter = rateLimit({
+  windowMs: 60_000, // ventana 1 minuto
+  max: 300, // límite público
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    const ip = req.ip || req.connection?.remoteAddress || "";
+    const key = req.header("x-api-key");
+
+    // Whitelist: loopback, tu IP pública, o si usa la API_KEY
+    return (
+      ip === "127.0.0.1" ||
+      ip === "::1" ||
+      ip === "45.32.163.233" ||
+      key === API_KEY
+    );
+  },
+});
+
+app.use(limiter);
 
 const httpServer = createServer(app);
 
