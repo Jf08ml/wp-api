@@ -1,14 +1,16 @@
+// db/mongo.js
 import { MongoClient } from "mongodb";
 import dotenv from "dotenv";
 dotenv.config();
 
-const client = new MongoClient(process.env.MONGO_URI, {});
+let _client;
 
 export async function connectMongo() {
-  if (!client.topology || !client.topology.isConnected()) {
-    await client.connect();
+  if (!_client) {
+    _client = new MongoClient(process.env.MONGO_URI, {});
+    await _client.connect();
   }
-  return client.db();
+  return _client.db(); 
 }
 
-export default client;
+export default { connectMongo };
