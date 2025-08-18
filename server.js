@@ -12,45 +12,72 @@ import {
   getClient,
   logoutClient,
   sendMessageSafe,
+  restartClient,
 } from "./sessions/sessionManager.js";
 
 dotenv.config();
 
 const app = express();
 
-app.set('trust proxy', 1);
+// *** Estás detrás de Caddy: confía en el proxy para X-Forwarded-For
+app.set("trust proxy", 1);
 
-app.use(cors());
+// CORS (ajusta si quieres restringir a tu frontend)
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "*";
+app.use(
+  cors({
+    origin: FRONTEND_ORIGIN,
+  })
+);
+
 app.use(express.json());
 
-// Seguridad simple por API key
+// --- Seguridad simple por API key (HTTP) ---
 const API_KEY = process.env.API_KEY || "change-me";
 app.use((req, res, next) => {
   const key = req.header("x-api-key");
-  if (!key || key !== API_KEY)
+  if (!key || key !== API_KEY) {
     return res.status(401).json({ error: "Unauthorized" });
+  }
   next();
 });
 
-// Rate limit básico (ajusta a tu tráfico)
+// --- Rate limit básico (respetando proxy) ---
 app.use(
   rateLimit({
     windowMs: 60_000,
     max: 120,
     standardHeaders: true,
     legacyHeaders: false,
+    // Si quisieras personalizar la clave: keyGenerator: (req) => req.ip,
   })
 );
 
 const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: "*" } });
 
-// Mongo
+// --- Socket.IO con auth via handshake (los browsers no pueden mandar headers arbitrarios) ---
+const io = new Server(httpServer, {
+  cors: { origin: FRONTEND_ORIGIN },
+});
+
+io.use((socket, next) => {
+  const key =
+    socket.handshake.auth?.apiKey || socket.handshake.headers["x-api-key"];
+  if (key && key === API_KEY) return next();
+  next(new Error("unauthorized"));
+});
+
+// --- Mongo ---
 connectMongo()
   .then(() => console.log("✅ MongoDB conectado"))
   .catch((e) => console.error("❌ Error Mongo:", e.message));
 
-// Crear/reusar sesión
+// --- Healthcheck sencillo (útil para Caddy/monitoring) ---
+app.get("/health", (_req, res) => {
+  res.json({ ok: true, time: new Date().toISOString() });
+});
+
+// --- Crear/reusar sesión ---
 app.post("/api/session", (req, res) => {
   const { clientId } = req.body;
   if (!clientId) return res.status(400).json({ error: "Falta clientId" });
@@ -58,7 +85,7 @@ app.post("/api/session", (req, res) => {
   res.json({ status: "pending", clientId });
 });
 
-// Enviar mensaje (texto o imagen) con reintento seguro
+// --- Enviar mensaje (texto o imagen) con reintento seguro ---
 app.post("/api/send", async (req, res) => {
   const { clientId, phone, message, image } = req.body;
   if (!clientId || !phone || (!message && !image)) {
@@ -77,7 +104,7 @@ app.post("/api/send", async (req, res) => {
   }
 });
 
-// Logout y borrado de auth (sólo manual)
+// --- Logout y borrado de credenciales (requiere re-escanear) ---
 app.post("/api/logout", (req, res) => {
   const { clientId } = req.body;
   if (!clientId) return res.status(400).json({ error: "Falta clientId" });
@@ -85,23 +112,76 @@ app.post("/api/logout", (req, res) => {
   res.json({ status: "logout", clientId });
 });
 
-// Listar sesiones
-app.get("/api/sessions", (req, res) => {
+// --- Reiniciar sesión sin perder login (reinit del cliente) ---
+app.post("/api/restart", async (req, res) => {
+  const { clientId } = req.body;
+  if (!clientId) return res.status(400).json({ error: "Falta clientId" });
+  try {
+    await restartClient(clientId, io);
+    res.json({ status: "restarting", clientId });
+  } catch (e) {
+    res.status(500).json({ error: e.message || String(e) });
+  }
+});
+
+// --- Listar sesiones en memoria ---
+app.get("/api/sessions", (_req, res) => {
   const list = Object.keys(clients).map((clientId) => {
     const c = clients[clientId];
-    return { clientId, status: c.__status || "pending" };
+    return {
+      clientId,
+      status: c.__status || "pending", // 'connecting' | 'waiting_qr' | 'ready' | ...
+      reason: c.__reason || "",
+      lastReadyAt: c.__lastReadyAt || 0,
+      lastQrAt: c.__lastQrAt || 0,
+    };
   });
   res.json(list);
 });
 
-// Websockets
+// --- Status de una sesión específica (útil para sincronizar UI al refrescar) ---
+app.get("/api/status/:clientId", async (req, res) => {
+  const { clientId } = req.params;
+  const c = getClient(clientId);
+  if (!c) return res.json({ code: "disconnected", reason: "not_found" });
+  try {
+    const st = await c.getState().catch(() => "UNKNOWN");
+    const code = c.__ready
+      ? "ready"
+      : c.__status || (st === "CONNECTED" ? "authenticated" : "disconnected");
+    res.json({
+      code,
+      reason: c.__reason || "",
+      wweb_state: st,
+      lastReadyAt: c.__lastReadyAt || 0,
+      lastQrAt: c.__lastQrAt || 0,
+    });
+  } catch (e) {
+    res.json({ code: "disconnected", reason: e.message || "unknown" });
+  }
+});
+
+// --- WebSockets: sala por clientId + estado inicial ---
 io.on("connection", (socket) => {
   socket.on("join", ({ clientId }) => {
     if (!clientId) return;
     socket.join(clientId);
     const c = getClient(clientId);
-    if (c && c.__ready) socket.emit("status", { status: "ready" });
+    if (c) {
+      const code = c.__ready ? "ready" : c.__status || "connecting";
+      socket.emit("status", {
+        code,
+        reason: c.__reason || "",
+        ts: Date.now(),
+      });
+    }
   });
+});
+
+// --- Manejo de errores Express (fallback) ---
+app.use((err, _req, res, _next) => {
+  console.error("Express error:", err);
+  res.status(500).json({ error: err?.message || "Server error" });
 });
 
 const PORT = process.env.PORT || 3000;
